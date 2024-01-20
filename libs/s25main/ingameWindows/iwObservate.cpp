@@ -48,6 +48,11 @@ iwObservate::iwObservate(GameWorldView& gwv, const MapPoint selectedPt)
     // Fenster vergroessern/verkleinern
     btPos.x += btSize.x;
     AddImageButton(4, btPos, btSize, TextureColor::Grey, LOADER.GetImageN("io", 109), _("Resize window"));
+
+    // Synchronize visibility of HUD elements with parentView
+    parentView.CopyHudSettingsTo(*view, false);
+    gwvSettingsConnection =
+      parentView.onHudSettingsChanged.connect([this]() { parentView.CopyHudSettingsTo(*view, false); });
 }
 
 void iwObservate::Msg_ButtonClick(const unsigned ctrl_id)
@@ -143,11 +148,6 @@ void iwObservate::Msg_ButtonClick(const unsigned ctrl_id)
             for(unsigned i = 1; i <= 4; ++i)
                 GetCtrl<ctrlImageButton>(i)->SetPos(
                   DrawPoint(GetCtrl<ctrlImageButton>(i)->GetPos().x - diff, GetSize().y - 50));
-
-            DrawPoint maxPos(VIDEODRIVER.GetRenderSize() - GetSize() - Extent::all(1));
-            DrawPoint newPos = elMin(maxPos, GetPos());
-            if(newPos != GetPos())
-                SetPos(newPos);
     }
 }
 
@@ -231,7 +231,7 @@ bool iwObservate::Msg_MouseMove(const MouseCoords& mc)
     {
         int acceleration = SETTINGS.global.smartCursor ? 2 : 3;
 
-        if(SETTINGS.interface.revert_mouse)
+        if(SETTINGS.interface.invertMouse)
             acceleration = -acceleration;
 
         view->MoveBy((mc.GetPos() - scrollOrigin) * acceleration);

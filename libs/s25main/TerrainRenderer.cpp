@@ -56,7 +56,7 @@ static constexpr unsigned getFlatIndex(DescIdx<LandscapeDesc> ls, LandRoadType r
     return ls.value * helpers::NumEnumValues_v<LandRoadType> + rttr::enum_cast(road);
 }
 
-TerrainRenderer::PointF TerrainRenderer::GetNeighbourVertexPos(MapPoint pt, const Direction dir) const
+PointF TerrainRenderer::GetNeighbourVertexPos(MapPoint pt, const Direction dir) const
 {
     // Note: We want the real neighbour point which might be outside of the map to get the offset right
     Position ptNb = ::GetNeighbour(Position(pt), dir);
@@ -67,8 +67,8 @@ TerrainRenderer::PointF TerrainRenderer::GetNeighbourVertexPos(MapPoint pt, cons
     return GetVertexPos(t) + PointF(offset);
 }
 
-TerrainRenderer::PointF TerrainRenderer::GetNeighbourBorderPos(const MapPoint pt, const unsigned char triangle,
-                                                               const Direction dir) const
+PointF TerrainRenderer::GetNeighbourBorderPos(const MapPoint pt, const unsigned char triangle,
+                                              const Direction dir) const
 {
     // Note: We want the real neighbour point which might be outside of the map to get the offset right
     Position ptNb = ::GetNeighbour(Position(pt), dir);
@@ -205,7 +205,7 @@ void TerrainRenderer::GenerateVertices(const GameWorldViewer& gwv)
 
 void TerrainRenderer::UpdateVertexPos(const MapPoint pt, const GameWorldViewer& gwv)
 {
-    GetVertex(pt).pos = Point<float>(gwv.GetWorld().GetNodePos(pt));
+    GetVertex(pt).pos = PointF(gwv.GetWorld().GetNodePos(pt));
 }
 
 void TerrainRenderer::UpdateVertexColor(const MapPoint pt, const GameWorldViewer& gwv)
@@ -886,7 +886,7 @@ void TerrainRenderer::PrepareWaysPoint(PreparedRoads& sorted_roads, const GameWo
                                        const Position& offset) const
 {
     const WorldDescription& desc = gwViewer.GetWorld().GetDescription();
-    Position startPos = Position(GetVertexPos(pt)) + offset;
+    Position startPos = Position(Position::Truncate, GetVertexPos(pt)) + offset;
 
     Visibility visibility = gwViewer.GetVisibility(pt);
 
@@ -902,7 +902,7 @@ void TerrainRenderer::PrepareWaysPoint(PreparedRoads& sorted_roads, const GameWo
         const Direction targetDir = toDirection(dir);
         MapPoint ta = gwViewer.GetNeighbour(pt, targetDir);
 
-        Position endPos = Position(GetVertexPos(ta)) + offset;
+        Position endPos = Position(Position::Truncate, GetVertexPos(ta)) + offset;
         Position diff = startPos - endPos;
 
         // Gehen wir über einen Kartenrand (horizontale Richung?)

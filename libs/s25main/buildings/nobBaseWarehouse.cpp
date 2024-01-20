@@ -66,8 +66,18 @@ void nobBaseWarehouse::DestroyBuilding()
 {
     // Den Waren und Figuren Bescheid sagen, die zu uns auf den Weg sind, dass wir nun nicht mehr existieren
     for(noFigure* dependent_figure : dependent_figures)
-        dependent_figure->GoHome();
+    {
+        // Only send figures home that are not already at this position.
+        if(dependent_figure->GetPos() == GetPos())
+        {
+            dependent_figure->SetGoalTonullptr();
+            dependent_figure->CutCurrentRoad();
+            dependent_figure->StartWandering();
+        } else
+            dependent_figure->GoHome();
+    }
     dependent_figures.clear();
+
     for(Ware* dependent_ware : dependent_wares)
         WareNotNeeded(dependent_ware);
     dependent_wares.clear();
@@ -858,42 +868,37 @@ void nobBaseWarehouse::TakeWare(Ware* ware)
     dependent_wares.push_back(ware);
 }
 
-void nobBaseWarehouse::OrderTroops(nobMilitary* goal, unsigned count, bool ignoresettingsendweakfirst)
+void nobBaseWarehouse::OrderTroops(nobMilitary* goal, std::array<unsigned, NUM_SOLDIER_RANKS>& counts, unsigned& max)
 {
-    // Soldaten durchgehen und count rausschicken
+    unsigned start, limit;
+    int step;
 
-    // Ränge durchgehen, absteigend, starke zuerst
-    if(world->GetPlayer(player).GetMilitarySetting(1) >= MILITARY_SETTINGS_SCALE[1] / 2 && !ignoresettingsendweakfirst)
+    if(world->GetPlayer(player).GetMilitarySetting(1) >= MILITARY_SETTINGS_SCALE[1] / 2)
     {
-        for(unsigned i = SOLDIER_JOBS.size(); i && count; --i)
-        {
-            const Job curRank = SOLDIER_JOBS[i - 1];
-            // Vertreter der Ränge ggf rausschicken
-            while(inventory[curRank] && count)
-            {
-                auto soldier = std::make_unique<nofPassiveSoldier>(pos, player, goal, goal, i - 1);
-                inventory.real.Remove(curRank);
-                goal->GotWorker(curRank, *soldier);
-                AddLeavingFigure(std::move(soldier));
-                --count;
-            }
-        }
+        // Ränge durchgehen, absteigend, starke zuerst
+        start = SOLDIER_JOBS.size();
+        step = -1;
+        limit = 0;
+    } else
+    {
+        // Ränge durchgehen, aufsteigend, schwache zuerst
+        start = 1;
+        step = 1;
+        limit = SOLDIER_JOBS.size() + 1;
     }
-    // Ränge durchgehen, aufsteigend, schwache zuerst
-    else
+
+    for(unsigned i = start; i != limit && max; i += step)
     {
-        for(unsigned i = 1; i <= SOLDIER_JOBS.size() && count; ++i)
+        const Job curRank = SOLDIER_JOBS[i - 1];
+        // Vertreter der Ränge ggf rausschicken
+        while(inventory[curRank] && max && counts[i - 1])
         {
-            const Job curRank = SOLDIER_JOBS[i - 1];
-            // Vertreter der Ränge ggf rausschicken
-            while(inventory[curRank] && count)
-            {
-                auto soldier = std::make_unique<nofPassiveSoldier>(pos, player, goal, goal, i - 1);
-                inventory.real.Remove(curRank);
-                goal->GotWorker(curRank, *soldier);
-                AddLeavingFigure(std::move(soldier));
-                --count;
-            }
+            auto soldier = std::make_unique<nofPassiveSoldier>(pos, player, goal, goal, i - 1);
+            inventory.real.Remove(curRank);
+            goal->GotWorker(curRank, *soldier);
+            AddLeavingFigure(std::move(soldier));
+            --max;
+            --counts[i - 1];
         }
     }
 }

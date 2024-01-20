@@ -15,6 +15,7 @@
 #include <boost/nowide/iostream.hpp>
 #include <SDL.h>
 #include <algorithm>
+#include <memory>
 
 #ifdef _WIN32
 #    include <boost/nowide/convert.hpp>
@@ -27,6 +28,17 @@
         if((call) == -1)                \
             PrintError(SDL_GetError()); \
     } while(false)
+
+namespace {
+template<typename T>
+struct SDLMemoryDeleter
+{
+    void operator()(T* p) const { SDL_free(p); }
+};
+
+template<typename T>
+using SDL_memory = std::unique_ptr<T, SDLMemoryDeleter<T>>;
+} // namespace
 
 IVideoDriver* CreateVideoInstance(VideoDriverLoaderInterface* CallBack)
 {
@@ -116,15 +128,20 @@ bool VideoSDL2::CreateScreen(const std::string& title, const VideoMode& size, bo
     int wndPos = SDL_WINDOWPOS_CENTERED;
 
     const auto requestedSize = fullscreen ? FindClosestVideoMode(size) : size;
+    unsigned commonFlags = SDL_WINDOW_OPENGL;
+
+#if SDL_VERSION_ATLEAST(2, 0, 1)
+    commonFlags |= SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
 
     window = SDL_CreateWindow(title.c_str(), wndPos, wndPos, requestedSize.width, requestedSize.height,
-                              SDL_WINDOW_OPENGL | (fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE));
+                              commonFlags | (fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE));
 
     // Fallback to non-fullscreen
     if(!window && fullscreen)
     {
         window = SDL_CreateWindow(title.c_str(), wndPos, wndPos, requestedSize.width, requestedSize.height,
-                                  SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+                                  commonFlags | SDL_WINDOW_RESIZABLE);
     }
 
     if(!window)
@@ -211,31 +228,27 @@ void VideoSDL2::PrintError(const std::string& msg) const
     boost::nowide::cerr << msg << std::endl;
 }
 
+void VideoSDL2::ShowErrorMessage(const std::string& title, const std::string& message)
+{
+    // window==nullptr is okay too ("no parent")
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title.c_str(), message.c_str(), window);
+}
+
 void VideoSDL2::HandlePaste()
 {
-#ifdef _WIN32
-    if(!IsClipboardFormatAvailable(CF_UNICODETEXT))
+    if(!SDL_HasClipboardText())
         return;
 
-    OpenClipboard(nullptr);
+    SDL_memory<char> text(SDL_GetClipboardText());
+    if(!text || *text == '\0') // empty string indicates error
+        PrintError(text ? SDL_GetError() : "Paste failed.");
 
-    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
-    const wchar_t* pData = (const wchar_t*)GlobalLock(hData);
-
-    KeyEvent ke = {KeyType::Invalid, 0, false, false, false};
-    while(pData && *pData)
+    KeyEvent ke = {KeyType::Char, 0, false, false, false};
+    for(const char32_t c : s25util::utf8to32(text.get()))
     {
-        ke.c = *(pData++);
-        if(ke.c == L' ')
-            ke.kt = KeyType::Space;
-        else
-            ke.kt = KeyType::Char;
+        ke.c = static_cast<unsigned>(c);
         CallBack->Msg_KeyDown(ke);
     }
-
-    GlobalUnlock(hData);
-    CloseClipboard();
-#endif
 }
 
 void VideoSDL2::DestroyScreen()
@@ -251,8 +264,6 @@ bool VideoSDL2::SwapBuffers()
 
 bool VideoSDL2::MessageLoop()
 {
-    static bool mouseMoved = false;
-
     SDL_Event ev;
     while(SDL_PollEvent(&ev))
     {
@@ -346,7 +357,7 @@ bool VideoSDL2::MessageLoop()
                 break;
             }
             case SDL_MOUSEBUTTONDOWN:
-                mouse_xy.pos = Position(ev.button.x, ev.button.y);
+                mouse_xy.pos = getGuiScale().screenToView(Position(ev.button.x, ev.button.y));
 
                 if(/*!mouse_xy.ldown && */ ev.button.button == SDL_BUTTON_LEFT)
                 {
@@ -360,7 +371,7 @@ bool VideoSDL2::MessageLoop()
                 }
                 break;
             case SDL_MOUSEBUTTONUP:
-                mouse_xy.pos = Position(ev.button.x, ev.button.y);
+                mouse_xy.pos = getGuiScale().screenToView(Position(ev.button.x, ev.button.y));
 
                 if(/*mouse_xy.ldown &&*/ ev.button.button == SDL_BUTTON_LEFT)
                 {
@@ -387,19 +398,12 @@ bool VideoSDL2::MessageLoop()
             }
             break;
             case SDL_MOUSEMOTION:
-                // Handle only 1st mouse move
-                if(!mouseMoved)
-                {
-                    mouse_xy.pos = Position(ev.motion.x, ev.motion.y);
-
-                    CallBack->Msg_MouseMove(mouse_xy);
-                    mouseMoved = true;
-                }
+                mouse_xy.pos = getGuiScale().screenToView(Position(ev.motion.x, ev.motion.y));
+                CallBack->Msg_MouseMove(mouse_xy);
                 break;
         }
     }
 
-    mouseMoved = false;
     return true;
 }
 
@@ -434,8 +438,9 @@ OpenGL_Loader_Proc VideoSDL2::GetLoaderFunction() const
 
 void VideoSDL2::SetMousePos(Position pos)
 {
+    const auto screenPos = getGuiScale().viewToScreen(pos);
     mouse_xy.pos = pos;
-    SDL_WarpMouseInWindow(window, pos.x, pos.y);
+    SDL_WarpMouseInWindow(window, screenPos.x, screenPos.y);
 }
 
 KeyEvent VideoSDL2::GetModKeyState() const

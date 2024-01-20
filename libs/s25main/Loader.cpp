@@ -21,6 +21,7 @@
 #include "ogl/glArchivItem_Bitmap_RLE.h"
 #include "ogl/glArchivItem_Bitmap_Raw.h"
 #include "ogl/glArchivItem_Bob.h"
+#include "ogl/glArchivItem_Sound_Wave.h"
 #include "ogl/glFont.h"
 #include "ogl/glSmartBitmap.h"
 #include "ogl/glTexturePacker.h"
@@ -370,6 +371,7 @@ void Loader::LoadDummyMapFiles()
     pushRange(350, 432);
     pushRange(440, 484);
     pushRange(500, 527);
+    pushRange(560, 561);
 
     for(int j = 0; j <= 5; j++)
     {
@@ -381,6 +383,17 @@ void Loader::LoadDummyMapFiles()
             bmp->create(buffer);
             bobs.push(std::move(bmp));
         }
+    }
+}
+
+void Loader::LoadDummySoundFiles()
+{
+    libsiedler2::Archiv& archive = files_["sound"].archive;
+    archive.alloc(116);
+    for(unsigned id = 51; id < archive.size(); id++)
+    {
+        auto snd = std::make_unique<glArchivItem_Sound_Wave>();
+        archive.set(id, std::move(snd));
     }
 }
 

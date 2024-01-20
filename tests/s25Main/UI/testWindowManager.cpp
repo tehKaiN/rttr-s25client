@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "DrawPoint.h"
 #include "PointOutput.h"
+#include "Settings.h"
 #include "WindowManager.h"
 #include "desktops/Desktop.h"
 #include "helpers/containerUtils.h"
@@ -464,6 +466,92 @@ BOOST_FIXTURE_TEST_CASE(RightclickClosesWindow, uiHelper::Fixture)
     MOCK_EXPECT(wnd2->Draw_).once();
     WINDOWMANAGER.Draw();
     BOOST_TEST_REQUIRE(WINDOWMANAGER.GetTopMostWindow() == wnd2);
+}
+
+BOOST_FIXTURE_TEST_CASE(PinnedWindows, uiHelper::Fixture)
+{
+    constexpr KeyEvent evEsc{KeyType::Escape, 0, false, false, false};
+    constexpr KeyEvent evAltW{KeyType::Char, 'w', false, false, true};
+
+    BOOST_TEST_CONTEXT("Pinned windows ignore escape key")
+    {
+        auto* wnd = &WINDOWMANAGER.Show(std::make_unique<TestIngameWnd>(CGI_HELP));
+
+        wnd->SetPinned();
+        BOOST_TEST_CONTEXT("Pinned")
+        {
+            BOOST_TEST_REQUIRE(WINDOWMANAGER.GetTopMostWindow() == wnd);
+            WINDOWMANAGER.Msg_KeyDown(evEsc);
+            MOCK_EXPECT(wnd->Draw_).once();
+            WINDOWMANAGER.Draw();
+            BOOST_TEST_REQUIRE(WINDOWMANAGER.GetTopMostWindow() == wnd);
+        }
+
+        wnd->SetPinned(false);
+        BOOST_TEST_CONTEXT("Un-pinned")
+        {
+            WINDOWMANAGER.Msg_KeyDown(evEsc);
+            WINDOWMANAGER.Draw();
+            REQUIRE_WINDOW_DESTROYED(wnd);
+        }
+    }
+
+    BOOST_TEST_CONTEXT("Pinned windows close on Alt+W")
+    {
+        auto* wnd = &WINDOWMANAGER.Show(std::make_unique<TestIngameWnd>(CGI_HELP));
+
+        wnd->SetPinned();
+        BOOST_TEST_CONTEXT("Pinned")
+        {
+            BOOST_TEST_REQUIRE(WINDOWMANAGER.GetTopMostWindow() == wnd);
+            WINDOWMANAGER.Msg_KeyDown(evAltW);
+            WINDOWMANAGER.Draw();
+            REQUIRE_WINDOW_DESTROYED(wnd);
+        }
+    }
+
+    BOOST_TEST_CONTEXT("Pinned windows ignore right click")
+    {
+        auto* wnd = &WINDOWMANAGER.Show(std::make_unique<TestIngameWnd>(CGI_HELP));
+        BOOST_TEST_REQUIRE(WINDOWMANAGER.GetTopMostWindow() == wnd);
+        const MouseCoords evRDown(wnd->GetDrawPos() + Position(10, 10), false, true);
+
+        wnd->SetPinned();
+        BOOST_TEST_CONTEXT("Pinned")
+        {
+            WINDOWMANAGER.Msg_RightDown(evRDown);
+            MOCK_EXPECT(wnd->Draw_).once();
+            WINDOWMANAGER.Draw();
+            BOOST_TEST_REQUIRE(WINDOWMANAGER.GetTopMostWindow() == wnd);
+        }
+
+        wnd->SetPinned(false);
+        BOOST_TEST_CONTEXT("Un-pinned")
+        {
+            WINDOWMANAGER.Msg_RightDown(evRDown);
+            WINDOWMANAGER.Draw();
+            REQUIRE_WINDOW_DESTROYED(wnd);
+        }
+    }
+
+    mock::verify();
+}
+
+BOOST_FIXTURE_TEST_CASE(SnapWindow, uiHelper::Fixture)
+{
+    SETTINGS.interface.windowSnapDistance = 10;
+
+    WINDOWMANAGER.Show(std::make_unique<IngameWindow>(0, DrawPoint(0, 0), Extent(100, 100), "", nullptr));
+    auto* wnd =
+      &WINDOWMANAGER.Show(std::make_unique<IngameWindow>(0, DrawPoint(100, 0), Extent(100, 100), "", nullptr));
+
+    BOOST_TEST(WINDOWMANAGER.snapWindow(wnd, wnd->GetBoundaryRect()) == SnapOffset(0, 0));
+
+    wnd->SetPos(DrawPoint(111, 5));
+    BOOST_TEST(WINDOWMANAGER.snapWindow(wnd, wnd->GetBoundaryRect()) == SnapOffset(0, 0));
+
+    wnd->SetPos(DrawPoint(110, 5));
+    BOOST_TEST(WINDOWMANAGER.snapWindow(wnd, wnd->GetBoundaryRect()) == SnapOffset(-10, -5));
 }
 
 MOCK_BASE_CLASS(MockSettingsWnd, TransmitSettingsIgwAdapter)
